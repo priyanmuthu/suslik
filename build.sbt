@@ -29,6 +29,11 @@ libraryDependencies ++= Seq(
   "org.bitbucket.franck44.scalasmt" %% "scalasmt" % "2.1.1-SNAPSHOT" withSources()
 )
 
+// Adding actors
+libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.5.26"
+libraryDependencies += "com.typesafe.akka" %% "akka-remote" % "2.5.26"
+libraryDependencies += "com.typesafe.akka" %% "akka-testkit" % "2.5.26" % Test
+
 scalacOptions ++= Seq()
 
 logLevel in ThisBuild := Level.Warn
