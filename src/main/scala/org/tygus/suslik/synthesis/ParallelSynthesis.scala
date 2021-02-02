@@ -26,17 +26,21 @@ class ParallelSynthesis(tactic: Tactic, override implicit val log: Log, override
 
     val master = system.actorOf(Props(new Master), name = "Master")
 
-    val nWorkers = 1
+    // TODO: uncomment
+    //  val nWorkers = config.parallel.get
+    val nWorkers = 4
     val actorRefs: List[ActorRef] = master ::
       (for (i <- 0 until nWorkers)
-        yield system.actorOf(Props(new Worker(master)), name = s"Worker$i")
-        ).toList
+        // TODO
+//        yield system.actorOf(Props(new Worker(master)), name = s"Worker$i")
+        yield system.actorOf(Props(new Worker(master)), name = s"$i")
+      ).toList
 
     // TODO: get timeout from stats.timedOut
     // TODO: use onComplete
     val timeout = 1000.seconds
     val solution: Option[Solution] = try {
-      Await.result(master.ask(Protocol.BeginSearch)(timeout), timeout) match {
+      Await.result(master.ask(Protocol.StartSearch)(timeout), timeout) match {
         case SearchDone(sol) => sol
         case _ => None
       }
@@ -60,13 +64,12 @@ class ParallelSynthesis(tactic: Tactic, override implicit val log: Log, override
   }
 
   object Protocol {
-    case object BeginSearch
+    case object StartSearch
     case class SearchDone(solution: Option[Solution])
 
-    case class WorkerNew(worker: ActorRef)
-    case class WorkerTaskDone(worker: ActorRef, res: (Option[Solution], List[OrNode], Boolean))
-
+    case class NewWorker(worker: ActorRef)
     case class RequestTask(node: OrNode)
+    case class TaskDone(worker: ActorRef, res: (Option[Solution], List[OrNode], Boolean))
   }
 
   class Master(implicit stats: SynStats, config: SynConfig) extends Actor {
@@ -78,19 +81,19 @@ class ParallelSynthesis(tactic: Tactic, override implicit val log: Log, override
     var workers = Map[ActorRef, Option[OrNode]]()
 
     def receive = {
-      case BeginSearch =>
+      case StartSearch =>
         outer = sender
 
-      case WorkerNew(w) =>
+      case NewWorker(w) =>
         workers += w -> None
         context.watch(w)
         sendWork()
 
-      case WorkerTaskDone(w, (sol, newNodes, isFailed)) =>
+      case TaskDone(w, (sol, newNodes, isFailed)) =>
         var solution: Option[Solution] = None
         for (optionTask <- workers.get(w)) {
           for (node <- optionTask) {
-            //            println(s"${node.id.toString()}")
+            println(s"${w.path.name}: ${node.id}")
             worklist = newNodes ++ worklist
             solution = sol.flatMap(node.succeed(_))
             if (isFailed) node.fail
@@ -111,7 +114,6 @@ class ParallelSynthesis(tactic: Tactic, override implicit val log: Log, override
 
     def sendWork() = {
       val (idleWorkers, workingWorkers) = workers.partition(_._2.isEmpty)
-
       assert(idleWorkers.nonEmpty)
 
       val sz = worklist.length
@@ -119,10 +121,12 @@ class ParallelSynthesis(tactic: Tactic, override implicit val log: Log, override
       log.print(List((s"Succeeded leaves (${successLeaves.length}): ${successLeaves.map(n => s"${n.pp()}").mkString(" ")}", Console.YELLOW)))
       stats.updateMaxWLSize(sz)
 
-      if (worklist.isEmpty) { // No more goals to try: synthesis failed
-        if (workingWorkers.isEmpty) outer ! SearchDone(None)
+      if (worklist.isEmpty) {
+        if (workingWorkers.isEmpty) {
+          outer ! SearchDone(None) // No goals to try & no goals in progress: synthesis failed
+        }
       } else {
-        val nodes = selectNode(idleWorkers.size) // Select next node to expand
+        val nodes = selectNode(idleWorkers.size) // Select next nodes to expand
         for ((w, node) <- idleWorkers.keySet zip nodes) {
           workers += w -> Some(node)
           w ! RequestTask(node)
@@ -145,10 +149,10 @@ class ParallelSynthesis(tactic: Tactic, override implicit val log: Log, override
 
     def receive = {
       case RequestTask(node) =>
-        master ! WorkerTaskDone(self, expandNode(node))
+        master ! TaskDone(self, expandNode(node))
     }
 
-    override def preStart() = master ! WorkerNew(self)
+    override def preStart() = master ! NewWorker(self)
   }
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -191,9 +195,8 @@ class ParallelSynthesis(tactic: Tactic, override implicit val log: Log, override
           (e, i) <- expansions.zipWithIndex
           andNode = AndNode(i +: node.id, node, e)
           if isTerminatingExpansion(andNode) // termination check
-          nSubs = e.subgoals.size; () = trace.add(andNode, nSubs)
-          (g, j) <- if (nSubs == 1) List((e.subgoals.head, -1)) // this is here only for logging
-          else e.subgoals.zipWithIndex
+            nSubs = e.subgoals.size; () = trace.add(andNode, nSubs)
+          (g, j) <- if (nSubs == 1) List((e.subgoals.head, -1)) else e.subgoals.zipWithIndex
         } yield {
           val extraCost = if (j == -1) 0 else e.subgoals.drop(j + 1).map(_.cost).sum
           OrNode(j +: andNode.id, g, Some(andNode), node.extraCost + extraCost)
