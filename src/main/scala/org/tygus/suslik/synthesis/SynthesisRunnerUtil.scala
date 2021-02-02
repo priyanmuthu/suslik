@@ -113,7 +113,8 @@ trait SynthesisRunnerUtil {
       case None => ProofTraceNone
       case Some(file) => new ProofTraceJson(file)
     }
-    new Synthesis(tactic, log, trace)
+    if (env.config.parallel.isDefined) new ParallelSynthesis(tactic, log, trace)
+    else new Synthesis(tactic, log, trace)
   }
 
   def synthesizeFromFile(dir: String, testName: String): Unit = {

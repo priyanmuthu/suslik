@@ -63,10 +63,14 @@ class Synthesis(tactic: Tactic, implicit val log: Log, implicit val trace: Proof
   protected def synthesize(goal: Goal)
                           (stats: SynStats): Option[Solution] = {
     init(goal)
-    processWorkList(stats, goal.env.config)
+    runProcessWorkList(stats, goal.env.config)
   }
 
-  @tailrec final def processWorkList(implicit
+  protected def runProcessWorkList(implicit
+                                   stats: SynStats,
+                                   config: SynConfig): Option[Solution] = processWorkList(stats, config)
+
+  @tailrec private def processWorkList(implicit
                                      stats: SynStats,
                                      config: SynConfig): Option[Solution] = {
     // Check for timeouts
