@@ -31,6 +31,8 @@ object SynthesisRunner extends SynthesisRunnerUtil {
     * --phased <value>               split rules into unfolding and flat phases; default: true
     * -d, --depth <value>            depth first search; default: false
     * -i, --interactive <value>      interactive mode; default: false
+    * -p, --parallel <value>         parallel mode; default (in threads): 2
+    * -b, --benchmarks <value>       make benchmarks; default (in number of executions): 10
     * -s, --printStats <value>       print synthesis stats; default: true
     * -e, --printEnv <value>         print synthesis context; default: false
     * -f, --printFail <value>        print failed rule applications; default: false
@@ -51,12 +53,27 @@ object SynthesisRunner extends SynthesisRunnerUtil {
       println()
     }
     try {
-      synthesizeFromSpec(testName, in, out, params)
+      if (params.benchmarks.isDefined) {
+        makeBenchmarks(params.benchmarks.get, synthesizeFromSpec(testName, in, out, params))
+      } else {
+        synthesizeFromSpec(testName, in, out, params)
+      }
     } catch {
       case SynthesisException(msg) =>
         System.err.println("Synthesis failed:")
         System.err.println(msg)
     }
+  }
+
+  private def makeBenchmarks(num: Int, action: => Long): Unit = {
+    // warm-up
+    for (_ <- 0 until num) action
+
+    var summarize: Long = 0
+    for (_ <- 0 until num) {
+      summarize += action
+    }
+    println(Console.GREEN + s"Successfully synthesised in average ${summarize / num} milliseconds")
   }
 
   case class RunConfig(synConfig: SynConfig, fileName: String)
@@ -169,6 +186,14 @@ object SynthesisRunner extends SynthesisRunnerUtil {
     opt[Boolean]('i', "interactive").action(cfg { b =>
       _.copy(interactive = b)
     }).text("interactive mode; default: false")
+
+    opt[Int]('p', "parallel").action(cfg { p =>
+      _.copy(parallel = Some(p))
+    }).text("parallel mode; default (in threads): 2")
+
+    opt[Int]('b', "benchmarks").action(cfg { b =>
+      _.copy(benchmarks = Some(b))
+    }).text("make benchmarks; default (in number of executions): 10")
 
     opt[Boolean]('s', "printStats").action(cfg { b =>
       _.copy(printStats = b)

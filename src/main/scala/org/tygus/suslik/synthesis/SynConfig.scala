@@ -34,6 +34,8 @@ case class SynConfig(
                       delegatePure: Boolean = true,
                       // Timeout and logging
                       interactive: Boolean = false,
+                      parallel: Option[Int] = None,
+                      benchmarks: Option[Int] = None,
                       printStats: Boolean = true,
                       printSpecs: Boolean = false,
                       printDerivations: Boolean = false,

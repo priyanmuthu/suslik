@@ -121,7 +121,7 @@ trait SynthesisRunnerUtil {
     synthesizeFromSpec(testName, in, out, params)
   }
 
-  def synthesizeFromSpec(testName: String, text: String, out: String = noOutputCheck, params: SynConfig = defaultConfig) : Unit = {
+  def synthesizeFromSpec(testName: String, text: String, out: String = noOutputCheck, params: SynConfig = defaultConfig) : Long = {
     import log.out.testPrintln
 
     val parser = new SSLParser
@@ -222,6 +222,7 @@ trait SynthesisRunnerUtil {
           }
         }
     }
+    duration
   }
 
   def getDefs(defFiles: List[File]): String = {
