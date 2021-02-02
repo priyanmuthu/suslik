@@ -26,9 +26,7 @@ class ParallelSynthesis(tactic: Tactic, override implicit val log: Log, override
 
     val master = system.actorOf(Props(new Master), name = "Master")
 
-    // TODO: uncomment
-    //  val nWorkers = config.parallel.get
-    val nWorkers = 4
+    val nWorkers = config.parallel.get
     val actorRefs: List[ActorRef] = master ::
       (for (i <- 0 until nWorkers)
         // TODO
@@ -90,10 +88,16 @@ class ParallelSynthesis(tactic: Tactic, override implicit val log: Log, override
         sendWork()
 
       case TaskDone(w, (sol, newNodes, isFailed)) =>
+        if (!config.printDerivations & !sol.isDefined & isFailed) {
+          println(getColor(w.path.name) + "Worker" + Console.RED + s" cannot expand goal: BACKTRACK")
+        }
         var solution: Option[Solution] = None
         for (optionTask <- workers.get(w)) {
           for (node <- optionTask) {
-            println(s"${w.path.name}: ${node.id}")
+            print(Console.WHITE + s"${worklist.map{_.id}.toString()}")
+            if (!config.printDerivations) {
+              println(getColor(w.path.name) + s"--------Done: ${node.id} put ${newNodes.map{_.id}.toString()}")
+            }
             worklist = newNodes ++ worklist
             solution = sol.flatMap(node.succeed(_))
             if (isFailed) node.fail
@@ -137,10 +141,19 @@ class ParallelSynthesis(tactic: Tactic, override implicit val log: Log, override
           if (config.printEnv) {
             log.print(List((s"${goal.env.pp}", Console.MAGENTA)))
           }
+          log.print(List((s"${w.path.name}: ${node.id}", Console.GREEN)))
           log.print(List((s"${goal.pp}", Console.BLUE)))
-          trace.add(node)
+
+          if (!config.printDerivations) {
+            println(getColor(w.path.name) + s"${node.id}")
+          }
         }
       }
+    }
+
+    private def getColor(actorName: String): String = actorName match {
+      case "0" => Console.GREEN
+      case "1" => Console.BLUE
     }
   }
 
@@ -184,7 +197,6 @@ class ParallelSynthesis(tactic: Tactic, override implicit val log: Log, override
     // Check if any of the expansions is a terminal
     expansions.find(_.subgoals.isEmpty) match {
       case Some(e) => {
-        trace.add(e, node)
         successLeaves = node :: successLeaves
         (Some(e.producer(Nil)), Nil, false)
       }
@@ -195,7 +207,7 @@ class ParallelSynthesis(tactic: Tactic, override implicit val log: Log, override
           (e, i) <- expansions.zipWithIndex
           andNode = AndNode(i +: node.id, node, e)
           if isTerminatingExpansion(andNode) // termination check
-            nSubs = e.subgoals.size; () = trace.add(andNode, nSubs)
+            nSubs = e.subgoals.size
           (g, j) <- if (nSubs == 1) List((e.subgoals.head, -1)) else e.subgoals.zipWithIndex
         } yield {
           val extraCost = if (j == -1) 0 else e.subgoals.drop(j + 1).map(_.cost).sum
